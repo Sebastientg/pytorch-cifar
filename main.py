@@ -211,12 +211,6 @@ if __name__ == '__main__':
             test(epoch)
             scheduler.step()
 
-            # Append metrics for graph generation
-            train_losses.append(train_loss / len(trainloader))
-            train_accuracies.append(100. * correct / total)
-            test_losses.append(test_loss / len(testloader))
-            test_accuracies.append(100. * correct / total)
-
     # Plot the graph
     plt.figure(figsize=(10, 6))
     plt.plot(epochs, train_accuracies, label='Training Accuracy', color='blue')
