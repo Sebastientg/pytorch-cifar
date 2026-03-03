@@ -19,29 +19,43 @@ import matplotlib.pyplot as plt
 if not os.path.exists('graphs'):
     os.makedirs('graphs')
 
-# Initialize lists to store metrics
-epochs = []
-train_losses = []
-train_accuracies = []
-test_losses = []
-test_accuracies = []
+# Initialize metrics per model key
+metrics = {
+    'model1': {
+        'train_loss': [],
+        'train_acc': [],
+        'test_loss': [],
+        'test_acc': [],
+    },
+    'model2': {
+        'train_loss': [],
+        'train_acc': [],
+        'test_loss': [],
+        'test_acc': [],
+    }
+}
 
+# CLI arguments
 parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
+# Global training settings
 parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
 parser.add_argument('--resume', '-r', action='store_true',
                     help='resume from checkpoint')
 parser.add_argument('--optimizer', default='SGD',
                     choices=['SGD', 'Adam'], help='Optimizer to use')
-parser.add_argument('--model', default='SimpleDLA', choices=['VGG19', 'ResNet18', 'PreActResNet18', 'GoogLeNet', 'DenseNet121', 'ResNeXt29_2x64d',
-                    'MobileNet', 'MobileNetV2', 'DPN92', 'ShuffleNetG2', 'SENet18', 'ShuffleNetV2', 'EfficientNetB0', 'RegNetX_200MF', 'SimpleDLA'], help='Model to use')
+# Model selection (model2 is optional for comparison mode)
+parser.add_argument('--model1', choices=['VGG19', 'ResNet18', 'PreActResNet18', 'GoogLeNet', 'DenseNet121', 'ResNeXt29_2x64d',
+                    'MobileNet', 'MobileNetV2', 'DPN92', 'ShuffleNetG2', 'SENet18', 'ShuffleNetV2', 'EfficientNetB0', 'RegNetX_200MF', 'SimpleDLA'], help='First model to use')
+parser.add_argument('--model2', choices=['VGG19', 'ResNet18', 'PreActResNet18', 'GoogLeNet', 'DenseNet121', 'ResNeXt29_2x64d',
+                    'MobileNet', 'MobileNetV2', 'DPN92', 'ShuffleNetG2', 'SENet18', 'ShuffleNetV2', 'EfficientNetB0', 'RegNetX_200MF', 'SimpleDLA'], help='Second model to use (optional)')
+# Epoch count and optional mock mode
+parser.add_argument('--epochs', default=10, type=int, help='number of epochs')
 parser.add_argument('--mock', action='store_true',
                     help='Enable mock mode for quick testing')
 
 args = parser.parse_args()
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-best_acc = 0  # best test accuracy
-start_epoch = 0  # start from epoch 0 or last checkpoint epoch
 
 # Data
 print('==> Preparing data..')
@@ -90,44 +104,70 @@ model_dict = {
     'SimpleDLA': SimpleDLA
 }
 
-net = model_dict[args.model]()
-net = net.to(device)
 if device == 'cuda':
-    net = torch.nn.DataParallel(net)
     cudnn.benchmark = True
 
-# Dynamically select the optimizer
-optimizer_dict = {
-    'SGD': lambda: optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4),
-    'Adam': lambda: optim.Adam(net.parameters(), lr=args.lr, weight_decay=5e-4)
+criterion = nn.CrossEntropyLoss()
+
+# Resume state is tracked per model key
+resume_state = {
+    'model1': {'start_epoch': 0, 'best_acc': 0.0},
+    'model2': {'start_epoch': 0, 'best_acc': 0.0},
 }
 
-optimizer = optimizer_dict[args.optimizer]()
 
-if args.resume:
-    # Load checkpoint.
-    print('==> Resuming from checkpoint..')
-    assert os.path.isdir('checkpoint'), 'Error: no checkpoint directory found!'
-    checkpoint = torch.load('./checkpoint/ckpt.pth')
-    net.load_state_dict(checkpoint['net'])
-    best_acc = checkpoint['acc']
-    start_epoch = checkpoint['epoch']
+def build_optimizer(model):
+    if args.optimizer == 'SGD':
+        return optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4)
+    return optim.Adam(model.parameters(), lr=args.lr, weight_decay=5e-4)
 
-criterion = nn.CrossEntropyLoss()
-scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
+
+def checkpoint_path(metric_key):
+    return f'./checkpoint/{metric_key}_ckpt.pth'
+
+
+def load_checkpoint_if_needed(model, optimizer, metric_key):
+    # Load model/optimizer/epoch only when --resume is set
+    if not args.resume:
+        return
+    ckpt_path = checkpoint_path(metric_key)
+    if not os.path.isfile(ckpt_path):
+        print(f'==> No checkpoint found for {metric_key} at {ckpt_path}')
+        return
+    checkpoint = torch.load(ckpt_path, map_location=device)
+    model.load_state_dict(checkpoint['model'])
+    optimizer.load_state_dict(checkpoint['optimizer'])
+    resume_state[metric_key]['start_epoch'] = checkpoint['epoch'] + 1
+    resume_state[metric_key]['best_acc'] = checkpoint.get('best_acc', checkpoint.get('acc', 0.0))
+    print(f"==> Resumed {metric_key} from epoch {resume_state[metric_key]['start_epoch']}")
+
+
+def save_checkpoint(model, optimizer, metric_key, epoch, acc):
+    # Save latest training state so Ctrl+C can resume later
+    if not os.path.isdir('checkpoint'):
+        os.mkdir('checkpoint')
+    resume_state[metric_key]['best_acc'] = max(resume_state[metric_key]['best_acc'], acc)
+    state = {
+        'model': model.state_dict(),
+        'optimizer': optimizer.state_dict(),
+        'epoch': epoch,
+        'acc': acc,
+        'best_acc': resume_state[metric_key]['best_acc'],
+    }
+    torch.save(state, checkpoint_path(metric_key))
 
 
 # Training
-def train(epoch):
+def train(epoch, model, optimizer, metric_key):
     print('\nEpoch: %d' % epoch)
-    net.train()
+    model.train()
     train_loss = 0
     correct = 0
     total = 0
     for batch_idx, (inputs, targets) in enumerate(trainloader):
         inputs, targets = inputs.to(device), targets.to(device)
         optimizer.zero_grad()
-        outputs = net(inputs)
+        outputs = model(inputs)
         loss = criterion(outputs, targets)
         loss.backward()
         optimizer.step()
@@ -139,21 +179,21 @@ def train(epoch):
 
         progress_bar(batch_idx, len(trainloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
                      % (train_loss/(batch_idx+1), 100.*correct/total, correct, total))
-        train_losses.append(train_loss / (batch_idx + 1))
-        train_accuracies.append(100. * correct / total)
+
+    metrics[metric_key]['train_loss'].append(train_loss / len(trainloader))
+    metrics[metric_key]['train_acc'].append(100. * correct / total)
 
 
 # Testing
-def test(epoch):
-    global best_acc
-    net.eval()
+def test(epoch, model, metric_key):
+    model.eval()
     test_loss = 0
     correct = 0
     total = 0
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(testloader):
             inputs, targets = inputs.to(device), targets.to(device)
-            outputs = net(inputs)
+            outputs = model(inputs)
             loss = criterion(outputs, targets)
 
             test_loss += loss.item()
@@ -163,32 +203,57 @@ def test(epoch):
 
             progress_bar(batch_idx, len(testloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
                          % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
-            test_losses.append(test_loss / (batch_idx + 1))
-            test_accuracies.append(100. * correct / total)
+    metrics[metric_key]['test_loss'].append(test_loss / len(testloader))
+    metrics[metric_key]['test_acc'].append(100. * correct / total)
+    return 100. * correct / total
 
-    # Save checkpoint.
-    acc = 100.*correct/total
-    if acc > best_acc:
-        print('Saving..')
-        state = {
-            'net': net.state_dict(),
-            'acc': acc,
-            'epoch': epoch,
-        }
-        if not os.path.isdir('checkpoint'):
-            os.mkdir('checkpoint')
-        torch.save(state, './checkpoint/ckpt.pth')
-        best_acc = acc
+
+def plot_single_model(model_name, epochs):
+    x = list(range(1, epochs + 1))
+    plt.figure(figsize=(10, 6))
+    plt.plot(x, metrics['model1']['train_acc'],
+             label=f'{model_name} Train', color='blue')
+    plt.plot(x, metrics['model1']['test_acc'],
+             label=f'{model_name} Test', color='orange')
+    plt.title(f'{model_name} | Optimizer: {args.optimizer}, LR: {args.lr}')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy (%)')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(f'graphs/{model_name}_{args.optimizer}_lr{args.lr}_curves.png')
+    plt.close()
+
+
+def plot_two_models(model1_name, model2_name, epochs):
+    x = list(range(1, epochs + 1))
+    plt.figure(figsize=(10, 6))
+    plt.plot(x, metrics['model1']['train_acc'],
+             label=f'{model1_name} Train', linestyle='--')
+    plt.plot(x, metrics['model1']['test_acc'],
+             label=f'{model1_name} Test', linestyle='-')
+    plt.plot(x, metrics['model2']['train_acc'],
+             label=f'{model2_name} Train', linestyle='--')
+    plt.plot(x, metrics['model2']['test_acc'],
+             label=f'{model2_name} Test', linestyle='-')
+    plt.title(
+        f'{model1_name} vs {model2_name} | Optimizer: {args.optimizer}, LR: {args.lr}')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy (%)')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(
+        f'graphs/{model1_name}_vs_{model2_name}_{args.optimizer}_lr{args.lr}_curves.png')
+    plt.close()
 
 
 if __name__ == '__main__':
+    # Case 0: mock mode (randomized metrics)
     if args.mock:
         print('==> Running in mock mode..')
         import random
 
         # Simulate training and testing with dummy data
-        for epoch in range(1, 6):  # Use a small number of epochs for testing
-            epochs.append(epoch)
+        for epoch in range(1, args.epochs + 1):
 
             # Generate random values for losses and accuracies
             train_loss = random.uniform(0.5, 1.5)
@@ -196,37 +261,47 @@ if __name__ == '__main__':
             test_loss = random.uniform(0.5, 1.5)
             test_acc = random.uniform(70, 90)
 
-            train_losses.append(train_loss)
-            train_accuracies.append(train_acc)
-            test_losses.append(test_loss)
-            test_accuracies.append(test_acc)
+            metrics['model1']['train_loss'].append(train_loss)
+            metrics['model1']['train_acc'].append(train_acc)
+            metrics['model1']['test_loss'].append(test_loss)
+            metrics['model1']['test_acc'].append(test_acc)
 
             print(
                 f"Epoch {epoch}: Train Loss={train_loss:.3f}, Train Acc={train_acc:.2f}%, Test Loss={test_loss:.3f}, Test Acc={test_acc:.2f}%")
+        plot_single_model('MockModel', args.epochs)
 
     else:
-        for epoch in range(start_epoch, start_epoch + 10):  # Example: Run for 10 epochs
-            epochs.append(epoch)
-            train(epoch)
-            test(epoch)
-            scheduler.step()
+        # Case 1 / 2: real training (one model or two-model comparison)
+        if not args.model1:
+            raise ValueError('Please provide --model1, or use --mock.')
 
-    # Plot the graph
-    plt.figure(figsize=(10, 6))
-    plt.plot(epochs, train_accuracies, label='Training Accuracy', color='blue')
-    plt.plot(epochs, test_accuracies, label='Testing Accuracy', color='orange')
-    plt.title(
-        f'Training and Testing Curves for {args.model} with {args.optimizer}')
-    plt.xlabel('Epochs')
-    plt.ylabel('Accuracy (%)')
-    # Ensure epochs are whole numbers
-    plt.xticks(range(min(epochs), max(epochs) + 1))
-    # Ensure accuracy has decimals
-    plt.yticks([round(i, 1) for i in plt.yticks()[0]])
-    plt.legend()
-    plt.figtext(0.5, 0.01, 'Generated by PyTorch CIFAR10 Training Script',
-                wrap=True, horizontalalignment='center', fontsize=10)
-    plt.savefig(f'graphs/{args.model}_{args.optimizer}_training_curve.png')
-    plt.close()
+        model1 = model_dict[args.model1]().to(device)
+        if device == 'cuda':
+            model1 = torch.nn.DataParallel(model1)
+        optimizer1 = build_optimizer(model1)
+        load_checkpoint_if_needed(model1, optimizer1, 'model1')
+
+        for epoch in range(resume_state['model1']['start_epoch'], args.epochs):
+            train(epoch, model1, optimizer1, 'model1')
+            acc1 = test(epoch, model1, 'model1')
+            save_checkpoint(model1, optimizer1, 'model1', epoch, acc1)
+
+        # Case 2: two models -> 4 curves
+        if args.model2:
+            model2 = model_dict[args.model2]().to(device)
+            if device == 'cuda':
+                model2 = torch.nn.DataParallel(model2)
+            optimizer2 = build_optimizer(model2)
+            load_checkpoint_if_needed(model2, optimizer2, 'model2')
+
+            for epoch in range(resume_state['model2']['start_epoch'], args.epochs):
+                train(epoch, model2, optimizer2, 'model2')
+                acc2 = test(epoch, model2, 'model2')
+                save_checkpoint(model2, optimizer2, 'model2', epoch, acc2)
+
+            plot_two_models(args.model1, args.model2, args.epochs)
+        else:
+            # Case 1: one model -> 2 curves
+            plot_single_model(args.model1, args.epochs)
 
     print('Graph generated and saved in the graphs directory.')

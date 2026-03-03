@@ -6,53 +6,37 @@ I'm playing with [PyTorch](http://pytorch.org/) on the CIFAR10 dataset.
 - Python 3.6+
 - PyTorch 1.0+
 
-## Updated Training Instructions
+## Usage
 
-You can now specify the optimizer and model directly from the command line using the following arguments:
+### Arguments
+- `--optimizer`: `SGD` (default) or `Adam`
+- `--lr`: learning rate (default: `0.1`)
+- `--epochs`: number of epochs (default: `10`)
+- `--model1`: required for real training
+- `--model2`: optional, enables two-model comparison
+- `--resume`: resume from the last saved checkpoint for each model
+- `--mock`: mock mode with randomized metrics
 
-- `--optimizer`: Choose the optimizer to use. Options are `SGD` (default) and `Adam`.
-- `--model`: Choose the model to train. Available options include:
-  - `VGG19`
-  - `ResNet18`
-  - `PreActResNet18`
-  - `GoogLeNet`
-  - `DenseNet121`
-  - `ResNeXt29_2x64d`
-  - `MobileNet`
-  - `MobileNetV2`
-  - `DPN92`
-  - `ShuffleNetG2`
-  - `SENet18`
-  - `ShuffleNetV2`
-  - `EfficientNetB0`
-  - `RegNetX_200MF`
-  - `SimpleDLA` (default)
+### Cases
+- **Case 0 (mock):** 2 curves (train/test)
+- **Case 1 (`--model1` only):** 2 curves (train/test)
+- **Case 2 (`--model1` + `--model2`):** 4 curves (train/test for each model)
+
+Graph titles include optimizer and learning rate. Graphs are saved in the `graphs` directory.
 
 ### Examples
+```bash
+# Case 0: mock mode
+python main.py --mock --epochs 10 --optimizer SGD --lr 0.1
 
-Start training with the default optimizer (SGD) and model (SimpleDLA):
-```
-python main.py
-```
+# Case 1: single model
+python main.py --model1 ResNet18 --epochs 10 --optimizer Adam --lr 0.001
 
-Specify a different optimizer and model:
-```
-python main.py --optimizer Adam --model ResNet18
-```
+# Case 2: two-model comparison
+python main.py --model1 ResNet18 --model2 VGG19 --epochs 10 --optimizer SGD --lr 0.1
 
-Resume training with a specific learning rate:
-```
-python main.py --resume --lr=0.01
-```
-
-## Mock Mode
-
-For quick testing without running the full training process, you can use the `--mock` argument. This will simulate training and testing with dummy data and generate a graph.
-
-### Example
-Run in mock mode:
-```
-python main.py --mock
+# Resume an interrupted run
+python main.py --model1 ResNet18 --epochs 10 --optimizer SGD --lr 0.1 --resume
 ```
 
 ## Accuracy
@@ -75,11 +59,7 @@ python main.py --mock
 
 ## Graph Generation
 
-During training and testing, the script generates a graph showing the training and testing accuracy over epochs. The graph is saved in the `graphs` directory with a filename based on the selected model and optimizer.
-
-### Example Output
-Graph for `SimpleDLA` with `SGD`:
-```
-graphs/SimpleDLA_SGD_training_curve.png
-```
+The script plots epochs on the x-axis and accuracy on the y-axis:
+- single-model runs: 2 curves
+- two-model runs: 4 curves
 
