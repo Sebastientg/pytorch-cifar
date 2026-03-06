@@ -209,7 +209,7 @@ def test(epoch, model, metric_key):
 
 
 def plot_single_model(model_name, epochs):
-    x = list(range(1, epochs + 1))
+    x = list(range(1, len(metrics['model1']['train_acc']) + 1))
     plt.figure(figsize=(10, 6))
     plt.plot(x, metrics['model1']['train_acc'],
              label=f'{model_name} Train', color='blue')
@@ -218,6 +218,8 @@ def plot_single_model(model_name, epochs):
     plt.title(f'{model_name} | Optimizer: {args.optimizer}, LR: {args.lr}')
     plt.xlabel('Epochs')
     plt.ylabel('Accuracy (%)')
+    plt.xlim(1, 20)
+    plt.xticks(range(1, 21))
     plt.legend()
     plt.grid(True)
     plt.savefig(f'graphs/{model_name}_{args.optimizer}_lr{args.lr}_curves.png')
@@ -225,20 +227,23 @@ def plot_single_model(model_name, epochs):
 
 
 def plot_two_models(model1_name, model2_name, epochs):
-    x = list(range(1, epochs + 1))
+    x_model1 = list(range(1, len(metrics['model1']['train_acc']) + 1))
+    x_model2 = list(range(1, len(metrics['model2']['train_acc']) + 1))
     plt.figure(figsize=(10, 6))
-    plt.plot(x, metrics['model1']['train_acc'],
+    plt.plot(x_model1, metrics['model1']['train_acc'],
              label=f'{model1_name} Train', linestyle='--')
-    plt.plot(x, metrics['model1']['test_acc'],
+    plt.plot(x_model1, metrics['model1']['test_acc'],
              label=f'{model1_name} Test', linestyle='-')
-    plt.plot(x, metrics['model2']['train_acc'],
+    plt.plot(x_model2, metrics['model2']['train_acc'],
              label=f'{model2_name} Train', linestyle='--')
-    plt.plot(x, metrics['model2']['test_acc'],
+    plt.plot(x_model2, metrics['model2']['test_acc'],
              label=f'{model2_name} Test', linestyle='-')
     plt.title(
         f'{model1_name} vs {model2_name} | Optimizer: {args.optimizer}, LR: {args.lr}')
     plt.xlabel('Epochs')
     plt.ylabel('Accuracy (%)')
+    plt.xlim(1, 20)
+    plt.xticks(range(1, 21))
     plt.legend()
     plt.grid(True)
     plt.savefig(
