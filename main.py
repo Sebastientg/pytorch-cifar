@@ -138,15 +138,18 @@ def load_checkpoint_if_needed(model, optimizer, metric_key):
     model.load_state_dict(checkpoint['model'])
     optimizer.load_state_dict(checkpoint['optimizer'])
     resume_state[metric_key]['start_epoch'] = checkpoint['epoch'] + 1
-    resume_state[metric_key]['best_acc'] = checkpoint.get('best_acc', checkpoint.get('acc', 0.0))
-    print(f"==> Resumed {metric_key} from epoch {resume_state[metric_key]['start_epoch']}")
+    resume_state[metric_key]['best_acc'] = checkpoint.get(
+        'best_acc', checkpoint.get('acc', 0.0))
+    print(
+        f"==> Resumed {metric_key} from epoch {resume_state[metric_key]['start_epoch']}")
 
 
 def save_checkpoint(model, optimizer, metric_key, epoch, acc):
     # Save latest training state so Ctrl+C can resume later
     if not os.path.isdir('checkpoint'):
         os.mkdir('checkpoint')
-    resume_state[metric_key]['best_acc'] = max(resume_state[metric_key]['best_acc'], acc)
+    resume_state[metric_key]['best_acc'] = max(
+        resume_state[metric_key]['best_acc'], acc)
     state = {
         'model': model.state_dict(),
         'optimizer': optimizer.state_dict(),
@@ -218,6 +221,8 @@ def plot_single_model(model_name, epochs):
     plt.title(f'{model_name} | Optimizer: {args.optimizer}, LR: {args.lr}')
     plt.xlabel('Epochs')
     plt.ylabel('Accuracy (%)')
+    plt.ylim(0, 100)
+    plt.yticks(range(0, 101, 10))
     plt.xlim(1, 20)
     plt.xticks(range(1, 21))
     plt.legend()
@@ -242,6 +247,8 @@ def plot_two_models(model1_name, model2_name, epochs):
         f'{model1_name} vs {model2_name} | Optimizer: {args.optimizer}, LR: {args.lr}')
     plt.xlabel('Epochs')
     plt.ylabel('Accuracy (%)')
+    plt.ylim(0, 100)
+    plt.yticks(range(0, 101, 10))
     plt.xlim(1, 20)
     plt.xticks(range(1, 21))
     plt.legend()
